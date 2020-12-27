@@ -6,7 +6,14 @@ services:
   - postgresql
 rvm:
   - 2.5.7
+  - 2.7.2
 before_install: gem install bundler -v 2.1.4
 before_script:
   - psql -c 'CREATE DATABASE pg_sql_caller_test;' -U postgres
   - cp -v spec/config/database.travis.yml spec/config/database.yml
+script: bundle exec rake
+env:
+  matrix:
+    - AR=5.2.0
+    - AR=6.0.0
+    - AR=6.1.0
