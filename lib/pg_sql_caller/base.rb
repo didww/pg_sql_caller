@@ -72,6 +72,8 @@ module PgSqlCaller
 
     define_sql_methods(*CONNECTION_SQL_METHODS)
 
+    delegate :connection, to: :model_class
+
     def transaction_open?
       connection.send(:transaction_open?)
     end
@@ -139,8 +141,6 @@ module PgSqlCaller
     end
 
     private
-
-    delegate :connection, to: :model_class
 
     def deserialize_result(result, column_name, raw_value)
       column_type = result.column_types[column_name]
