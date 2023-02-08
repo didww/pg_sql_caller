@@ -53,6 +53,7 @@ module PgSqlCaller
 
     delegate(
         *CONNECTION_SQL_METHODS,
+        :connection,
         :transaction_open?,
         :select_all_serialized,
         :select_value_serialized,
