@@ -88,7 +88,9 @@ module PgSqlCaller
 
     def select_value_serialized(sql, *bindings)
       result = select_all(sql, *bindings)
-      key = result.first.keys.first
+      key = result.first&.keys&.first
+      return if key.nil?
+
       value = result.first.values.first
       deserialize_result(result, key, value)
     end
