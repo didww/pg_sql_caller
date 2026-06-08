@@ -1,0 +1,7 @@
+test:
+  adapter: postgresql
+  database: pg_sql_caller_test
+  host: 127.0.0.1
+  port: 5432
+  username: postgres
+  password: postgres

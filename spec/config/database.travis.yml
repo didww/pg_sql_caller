@@ -1,3 +1,0 @@
-test:
-  adapter: postgresql
-  database: pg_sql_caller_test
