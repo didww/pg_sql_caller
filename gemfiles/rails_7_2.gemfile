@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+# Pins ActiveRecord/ActiveSupport to the Rails 7.2 series for the CI test matrix.
+# Run with: BUNDLE_GEMFILE=gemfiles/rails_7_2.gemfile bundle exec rspec
+
+source 'https://rubygems.org'
+
+gemspec path: '..'
+
+gem 'activerecord', '~> 7.2.0'
+gem 'activesupport', '~> 7.2.0'
+
+gem 'database_cleaner'
+gem 'pg'
+
+gem 'rspec', '~> 3.13'

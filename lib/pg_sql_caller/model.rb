@@ -158,7 +158,11 @@ module PgSqlCaller
     # @param table_name [String, Symbol]
     # @return [Integer]
     def next_sequence_value(table_name)
-      select_value("SELECT last_value FROM #{table_name}_id_seq") + 1
+      sequence_name = quote_table_name("#{table_name}_id_seq")
+      # `sequence_name` is an identifier escaped via quote_table_name (identifiers cannot use `?`
+      # bindings), so the interpolation below is injection-safe.
+      # nosemgrep: pg-sql-caller-interpolated-raw-sql
+      select_value("SELECT last_value FROM #{sequence_name}") + 1
     end
 
     # Total on-disk size of the table including indexes and TOAST, in bytes
@@ -205,6 +209,9 @@ module PgSqlCaller
     # @param sql [String] the statement to analyze
     # @return [String] the plan, one line per row, prefixed with a +QUERY_PLAN+ header
     def explain_analyze(sql)
+      # `sql` is the statement to analyze; the caller owns the full SQL by contract (like #execute),
+      # so there is no boundary to bind across.
+      # nosemgrep: pg-sql-caller-interpolated-raw-sql
       result = select_values("EXPLAIN ANALYZE #{sql}")
       ['QUERY_PLAN', *result].join("\n")
     end

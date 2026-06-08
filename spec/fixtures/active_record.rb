@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'yaml'
+require 'fileutils'
 require 'active_support/logger'
 require 'active_record'
 
@@ -8,7 +9,7 @@ config = YAML.load_file('spec/config/database.yml')
 ActiveRecord::Base.establish_connection config['test']
 
 if ENV['CI']
-  ActiveRecord::Base.logger = ActiveSupport::Logger.new(STDOUT)
+  ActiveRecord::Base.logger = ActiveSupport::Logger.new($stdout)
 else
   FileUtils.mkdir_p 'tmp'
   ActiveRecord::Base.logger = ActiveSupport::Logger.new('tmp/test.log')
@@ -42,6 +43,7 @@ ActiveRecord::Schema.define do
 end
 
 class ApplicationRecord < ActiveRecord::Base
+  self.abstract_class = true
 end
 
 class Department < ApplicationRecord

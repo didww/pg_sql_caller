@@ -15,16 +15,19 @@ RSpec.configure do |config|
   # Disable RSpec exposing methods globally on `Module` and `main`
   config.disable_monkey_patching!
 
+  # Opt-in only: run with `--tag benchmark` (see bulk_update_spec.rb).
+  config.filter_run_excluding :benchmark
+
   config.expect_with :rspec do |c|
     c.syntax = :expect
   end
 
-  config.before(:each) do
+  config.before do
     DatabaseCleaner.strategy = :truncation
     DatabaseCleaner.start
   end
 
-  config.after(:each) do
+  config.after do
     DatabaseCleaner.clean
   end
 end

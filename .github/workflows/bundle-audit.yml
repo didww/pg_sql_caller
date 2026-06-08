@@ -1,0 +1,24 @@
+name: bundle-audit
+
+on:
+  schedule:
+    # Daily security scan so newly published CVEs against existing dependencies
+    # surface even on days without a push.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: bundle-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Audit dependencies for known CVEs
+        run: bundle exec bundle-audit check --update

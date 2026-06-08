@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Test (Ruby ${{ matrix.ruby }}, Rails ${{ matrix.rails }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Diagonal matrix: every supported Ruby and every supported Rails is
+      # exercised at least once without running the full Ruby x Rails product.
+      matrix:
+        include:
+          - { ruby: '3.2', rails: '7.1', gemfile: rails_7_1 }
+          - { ruby: '3.3', rails: '7.2', gemfile: rails_7_2 }
+          - { ruby: '3.4', rails: '8.0', gemfile: rails_8_0 }
+          - { ruby: '3.4', rails: '8.1', gemfile: rails_8_1 }
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pg_sql_caller_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CI: 'true'
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/${{ matrix.gemfile }}.gemfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - name: Set up database config
+        run: cp -v spec/config/database.github.yml spec/config/database.yml
+      - name: Run specs
+        run: bundle exec rspec
+
+  rubocop:
+    name: RuboCop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Run RuboCop
+        run: bundle exec rubocop --parallel
+
+  bundle-audit:
+    name: bundle-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Audit dependencies for known CVEs
+        run: bundle exec bundle-audit check --update
+
+  semgrep:
+    name: Semgrep (SQL injection)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install Semgrep
+        run: pip install semgrep
+      - name: Scan with registry + custom ActiveRecord SQL rules
+        # Non-blocking: findings are reported to the Security tab rather than failing CI.
+        # Add `--error` (and drop continue-on-error) to make findings block the build.
+        continue-on-error: true
+        run: semgrep scan --config p/default --config .semgrep/ --sarif --output semgrep.sarif
+      - name: Upload findings to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep

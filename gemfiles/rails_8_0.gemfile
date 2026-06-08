@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+# Pins ActiveRecord/ActiveSupport to the Rails 8.0 series for the CI test matrix.
+# Run with: BUNDLE_GEMFILE=gemfiles/rails_8_0.gemfile bundle exec rspec
+
+source 'https://rubygems.org'
+
+gemspec path: '..'
+
+gem 'activerecord', '~> 8.0.0'
+gem 'activesupport', '~> 8.0.0'
+
+gem 'database_cleaner'
+gem 'pg'
+
+gem 'rspec', '~> 3.13'

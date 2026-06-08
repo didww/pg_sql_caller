@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Weekly dependency upgrades for the bundler ecosystem (version updates).
+  - package-ecosystem: bundler
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Bundle every RuboCop gem (rubocop + rubocop-* plugins) into one PR.
+      rubocop:
+        patterns:
+          - "rubocop"
+          - "rubocop-*"
+      # Bundle the Rails component gems into one PR so their versions move together.
+      rails:
+        patterns:
+          - "activerecord"
+          - "activemodel"
+          - "activesupport"
