@@ -125,6 +125,92 @@ RSpec.describe PgSqlCaller::BulkUpdate do
     end
   end
 
+  context 'with returning:' do
+    subject { described_class.call(Employee, attrs_list, returning: returning) }
+
+    let(:returning) { %i[id name department_id] }
+
+    it 'returns the updated rows as Symbol-keyed hashes of the listed columns', :aggregate_failures do
+      result = subject
+      expect(result).to contain_exactly(
+        { id: first.id, name: 'John Updated', department_id: other_dep.id },
+        { id: second.id, name: 'Jane Updated', department_id: other_dep.id }
+      )
+    end
+
+    it 'returns the new values, not the pre-update ones' do
+      expect(subject.map { |row| row[:name] }).to contain_exactly('John Updated', 'Jane Updated')
+    end
+
+    it 'returns only the listed columns' do
+      expect(subject.map(&:keys)).to all(eq(%i[id name department_id]))
+    end
+
+    context 'with a single column passed as a Symbol' do
+      let(:returning) { :id }
+
+      it 'coerces it to an Array and returns that one column' do
+        expect(subject).to contain_exactly({ id: first.id }, { id: second.id })
+      end
+    end
+
+    context 'with a datetime column' do
+      let(:created_at) { Time.now - 60 }
+      let(:attrs_list) { [{ id: first.id, created_at: created_at }] }
+      let(:returning)  { %i[id created_at] }
+
+      it 'type-casts each returned value to its Ruby type', :aggregate_failures do
+        row = subject.first
+        expect(row[:created_at]).to be_a(Time)
+        expect(row[:created_at]).to be_within(1).of(created_at)
+      end
+    end
+
+    context 'with a composite unique_by' do
+      subject do
+        described_class.call(Employee, attrs_list, unique_by: %i[department_id name], returning: %i[id name])
+      end
+
+      let(:new_created_at) { Time.now - 100 }
+      let(:attrs_list) do
+        [
+          { department_id: dep.id, name: 'John', created_at: new_created_at },
+          { department_id: dep.id, name: 'Jane', created_at: new_created_at }
+        ]
+      end
+
+      it 'returns a row per matched key, skipping non-matches' do
+        expect(subject).to contain_exactly({ id: first.id, name: 'John' }, { id: second.id, name: 'Jane' })
+      end
+    end
+
+    context 'when attrs_list is empty' do
+      let(:attrs_list) { [] }
+
+      it 'is a no-op returning an empty array' do
+        expect { expect(subject).to eq([]) }.not_to(change { first.reload.attributes })
+      end
+    end
+
+    context 'when returning names an unknown column' do
+      let(:returning) { %i[id bogus_column] }
+
+      it 'raises ArgumentError before touching the database', :aggregate_failures do
+        expect { subject }.to raise_error(ArgumentError, /unknown.*bogus_column/)
+        expect(first.reload.name).to eq('John')
+      end
+    end
+
+    context 'when returning is empty' do
+      let(:returning) { [] }
+
+      it 'raises ArgumentError', :aggregate_failures do
+        expect { subject }.to raise_error(ArgumentError, /at least one column/)
+        expect(first.reload.name).to eq('John')
+      end
+    end
+  end
+
   # Excluded from the default suite (see filter_run_excluding :benchmark).
   # Run with: bundle exec rspec spec/pg_sql_caller/bulk_update_spec.rb --tag benchmark
   describe 'performance vs N update_all calls in a transaction', :benchmark do

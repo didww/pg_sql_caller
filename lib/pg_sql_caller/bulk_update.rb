@@ -42,36 +42,70 @@ module PgSqlCaller
     #   `unique_by` column, and all hashes MUST share the same keys
     # @param unique_by [Symbol, Array<Symbol>] the match column(s) — a single column,
     #   or all parts of a composite key (default +:id+)
-    # @return [Integer] the number of rows affected
-    def self.call(model_class, attrs_list, unique_by: :id)
-      new(model_class, attrs_list, unique_by: unique_by).call
+    # @param returning [Symbol, Array<Symbol>, nil] column(s) to read back from each
+    #   updated row via SQL `RETURNING`; +nil+ (default) keeps the row-count behavior
+    # @return [Integer, Array<Hash{Symbol => Object}>] the number of rows affected, or —
+    #   when +returning+ is given — the updated rows as type-cast, Symbol-keyed hashes
+    def self.call(model_class, attrs_list, unique_by: :id, returning: nil)
+      new(model_class, attrs_list, unique_by: unique_by, returning: returning).call
     end
 
-    attr_reader :model_class, :unique_by, :attrs_list
+    attr_reader :model_class, :unique_by, :attrs_list, :returning
 
     # @param model_class [Class<ActiveRecord::Base>] the model whose table is updated
     # @param attrs_list [Array<Hash>] one hash per row; each MUST include every
     #   `unique_by` column, and all hashes MUST share the same keys
     # @param unique_by [Symbol, Array<Symbol>] the match column(s) — a single column,
     #   or all parts of a composite key (default +:id+)
-    def initialize(model_class, attrs_list, unique_by: :id)
+    # @param returning [Symbol, Array<Symbol>, nil] column(s) to read back from each
+    #   updated row via SQL `RETURNING`; +nil+ (default) keeps the row-count behavior
+    def initialize(model_class, attrs_list, unique_by: :id, returning: nil)
       @model_class = model_class
       @attrs_list = attrs_list
       @unique_by = Array(unique_by)
+      @returning = returning.nil? ? nil : Array(returning)
     end
 
     # Execute the bulk update as a single `UPDATE ... FROM unnest(...)` statement.
     #
-    # @return [Integer] the number of rows affected (0 when +attrs_list+ is empty)
-    # @raise [ArgumentError] if a row omits a `unique_by` column, or names a column
-    #   that does not exist on the model
+    # @return [Integer, Array<Hash{Symbol => Object}>] without +returning+, the number of
+    #   rows affected (0 when +attrs_list+ is empty); with +returning+, the updated rows as
+    #   type-cast, Symbol-keyed hashes (+[]+ when +attrs_list+ is empty)
+    # @raise [ArgumentError] if a row omits a `unique_by` column, names a column that does
+    #   not exist on the model, or +returning+ is empty or names an unknown column
     def call
-      return 0 if attrs_list.empty?
+      validate_returning! unless returning.nil?
+      return empty_result if attrs_list.empty?
 
-      sql_caller.execute(sql, *bindings).cmd_tuples
+      if returning.nil?
+        sql_caller.execute(sql, *bindings).cmd_tuples
+      else
+        sql_caller.select_all_serialized(sql, *bindings)
+      end
     end
 
     private
+
+    # The value returned for an empty +attrs_list+: a zero row count, or an empty row set
+    # when +returning+ was requested — mirroring the shape {#call} returns when it runs.
+    #
+    # @return [Integer, Array]
+    def empty_result
+      returning.nil? ? 0 : []
+    end
+
+    # Validate the requested `RETURNING` columns before any SQL runs: at least one column
+    # must be named, and every column must exist on the model (each is qualified with the
+    # target alias `t`, so it must be a real column, never an expression).
+    #
+    # @return [void]
+    # @raise [ArgumentError] if +returning+ is empty or names a column unknown to the model
+    def validate_returning!
+      raise ArgumentError, 'returning must name at least one column' if returning.empty?
+
+      unknown = returning.map(&:to_s) - model_class.column_names
+      raise ArgumentError, "unknown #{model_class} returning columns: #{unknown.join(', ')}" if unknown.any?
+    end
 
     # The SQL executor, built from the model's own connection: it sanitizes the bound
     # values, runs the statement and encodes the typed PostgreSQL arrays.
@@ -123,16 +157,28 @@ module PgSqlCaller
     end
 
     # The full `UPDATE ... FROM unnest(...)` statement, with one `?` placeholder per
-    # column for the value arrays.
+    # column for the value arrays, plus a `RETURNING` clause when +returning+ was given.
     #
     # @return [String]
     def sql
-      <<~SQL.squish
+      statement = <<~SQL.squish
         UPDATE #{model_class.quoted_table_name} AS t
         SET #{set_clause}
         FROM unnest(#{unnest_args}) AS v(#{column_aliases})
         WHERE #{match_clause}
       SQL
+      return statement if returning.nil?
+
+      "#{statement} RETURNING #{returning_clause}"
+    end
+
+    # The `RETURNING t.col, ...` projection. Each column is qualified with the target
+    # alias `t` because the `unnest` source alias `v` shares the same column names, so an
+    # unqualified `RETURNING` would be ambiguous.
+    #
+    # @return [String]
+    def returning_clause
+      returning.map { |col| "t.#{quoted(col)}" }.join(', ')
     end
 
     # The `SET col = v.col, ...` assignments for the value columns.

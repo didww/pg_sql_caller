@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-18
+
+### Added
+
+- `PgSqlCaller::BulkUpdate` now accepts an optional `returning:` keyword — pass one or more
+  column names to read them back from each updated row via SQL `RETURNING`. The result is one
+  `Symbol`-keyed, type-cast hash per updated row (`[]` when `attrs_list` is empty). Omitting
+  `returning:` keeps the existing behavior of returning the affected-row count.
+
 ## [1.0.0] - 2026-06-08
 
 ### Added
@@ -84,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transaction_open?`, `explain_analyze`, `typecast_array`, `sanitize_sql_array`, and
   `current_database_name`.
 
+[1.1.0]: https://github.com/didww/pg_sql_caller/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/didww/pg_sql_caller/compare/v0.2.3...v1.0.0
 [0.2.3]: https://github.com/didww/pg_sql_caller/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/didww/pg_sql_caller/compare/v0.2.1...v0.2.2
