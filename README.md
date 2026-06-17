@@ -328,13 +328,27 @@ PgSqlCaller::BulkUpdate.call(Employee, attrs_list, unique_by: :employee_number)
 PgSqlCaller::BulkUpdate.call(Employee, attrs_list, unique_by: %i[department_id name])
 ```
 
+### Reading back updated rows
+
+Pass `returning` to read columns back from each updated row (SQL `RETURNING`) instead of a row count. The result is one `Symbol`-keyed hash per updated row, with values cast to their Ruby types (the same casting as [`select_all_serialized`](#serialized-reads-ruby-type-casting)):
+
+```ruby
+PgSqlCaller::BulkUpdate.call(Employee, [
+  { id: 1, name: 'John', department_id: 10 },
+  { id: 2, name: 'Jane', department_id: 20 }
+], returning: %i[id name])
+# => [{ id: 1, name: 'John' }, { id: 2, name: 'Jane' }]
+```
+
+A single column may be passed as a `Symbol` (`returning: :id`). Without `returning` (the default) the call returns the affected-row **count** exactly as before — the behavior is unchanged.
+
 ### Rules and behavior
 
 - **Every row must include each `unique_by` column**, and all hashes must share the same set of keys.
 - Only the columns you list are written; `unique_by` columns are used for matching, the rest are updated. Columns you omit (e.g. `created_at`) are left untouched.
 - Rows that don't match an existing row are simply not updated — this **never inserts**.
-- Returns the number of rows affected (`0` when `attrs_list` is empty — a no-op).
-- Raises `ArgumentError` (before touching the database) if a row omits a `unique_by` column or names a column that doesn't exist on the model.
+- Returns the number of rows affected (`0` when `attrs_list` is empty — a no-op). With `returning`, it instead returns the updated rows as `Symbol`-keyed hashes (`[]` when `attrs_list` is empty).
+- Raises `ArgumentError` (before touching the database) if a row omits a `unique_by` column, names a column that doesn't exist on the model, or `returning` is empty or names an unknown column.
 
 ### Why not `upsert_all` or a loop of `update_all`?
 
