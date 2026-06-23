@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-06-22
+
+### Fixed
+
+- `PgSqlCaller::BulkUpdate` no longer truncates `datetime`/`time` values to whole seconds.
+  PostgreSQL's default timestamp array encoder formats elements via Ruby's `Time#to_s`,
+  dropping sub-seconds — which silently corrupted sub-second writes and, worse, broke any
+  `unique_by` match on a sub-second timestamp key (the truncated bind never equalled the
+  stored value, so the row was missed and the update became a silent no-op). Temporal
+  columns are now encoded at full microsecond precision.
+
 ## [1.1.0] - 2026-06-18
 
 ### Added

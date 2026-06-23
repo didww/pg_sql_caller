@@ -57,6 +57,58 @@ RSpec.describe PgSqlCaller::BulkUpdate do
     end
   end
 
+  # PostgreSQL's default timestamp array encoder formats elements via Time#to_s, dropping
+  # sub-seconds. These guard the microsecond-precision encoding for datetime arrays.
+  context 'with a sub-second datetime value' do
+    let(:precise) { Time.utc(2026, 6, 22, 16, 15, 8, 193_456) }
+    let(:attrs_list) { [{ id: first.id, created_at: precise }] }
+
+    it 'preserves microsecond precision (not truncated to whole seconds)' do
+      subject
+      expect(first.reload.created_at.utc.strftime('%6N')).to eq('193456')
+    end
+  end
+
+  context 'matching on a sub-second datetime unique_by key' do
+    subject { described_class.call(Employee, attrs_list, unique_by: %i[created_at]) }
+
+    let(:precise) { Time.utc(2026, 6, 22, 16, 15, 8, 193_000) }
+    let(:attrs_list) { [{ created_at: precise, name: 'Matched' }] }
+
+    before { first.update_column(:created_at, precise) }
+
+    it 'matches the row despite sub-second precision', :aggregate_failures do
+      expect(subject).to eq(1)
+      expect(first.reload.name).to eq('Matched')
+    end
+  end
+
+  # `time` columns hit the same default-array-encoder truncation as `datetime`; these guard
+  # the time-of-day encoding path (no date, no zone).
+  context 'with a sub-second time value' do
+    let(:shift_start) { Time.utc(2000, 1, 1, 16, 15, 8, 193_456) }
+    let(:attrs_list) { [{ id: first.id, shift_start: shift_start }] }
+
+    it 'preserves microsecond precision (not truncated to whole seconds)' do
+      subject
+      expect(first.reload.shift_start.strftime('%H:%M:%S.%6N')).to eq('16:15:08.193456')
+    end
+  end
+
+  context 'matching on a sub-second time unique_by key' do
+    subject { described_class.call(Employee, attrs_list, unique_by: %i[shift_start]) }
+
+    let(:shift_start) { Time.utc(2000, 1, 1, 16, 15, 8, 193_000) }
+    let(:attrs_list) { [{ shift_start: shift_start, name: 'Matched' }] }
+
+    before { first.update_column(:shift_start, shift_start) }
+
+    it 'matches the row despite sub-second precision', :aggregate_failures do
+      expect(subject).to eq(1)
+      expect(first.reload.name).to eq('Matched')
+    end
+  end
+
   context 'with a composite unique_by' do
     subject { described_class.call(Employee, attrs_list, unique_by: %i[department_id name]) }
 
