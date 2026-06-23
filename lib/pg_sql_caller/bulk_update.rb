@@ -216,8 +216,55 @@ module PgSqlCaller
     def bindings
       columns.map do |col|
         values = attrs_list.map { |attrs| attrs[col] }
-        sql_caller.typecast_array(values, type: model_class.type_for_attribute(col.to_s).type)
+        encode_column_array(col, values)
       end
+    end
+
+    # Encode one column's values as a PostgreSQL array literal for its `?::<sql_type>[]`
+    # placeholder. Temporal columns are encoded at full microsecond precision: PostgreSQL's
+    # default timestamp/time array encoder formats elements via Ruby's `Time#to_s`, which
+    # truncates to whole seconds — silently corrupting writes and, worse, breaking any
+    # `unique_by` match on a sub-second key (the truncated bind never equals the stored
+    # sub-second value, so the row is missed). Non-temporal columns use the standard
+    # typed-array encoder unchanged.
+    #
+    # @param col [Symbol] the column name
+    # @param values [Array] the per-row values for that column
+    # @return [String] a PostgreSQL array literal
+    def encode_column_array(col, values)
+      ar_type = model_class.type_for_attribute(col.to_s)
+      case ar_type.type
+      when :datetime then format_date_time_array(ar_type, values, include_date: true)
+      when :time     then format_date_time_array(ar_type, values, include_date: false)
+      else sql_caller.typecast_array(values, type: ar_type.type)
+      end
+    end
+
+    # Build a `{...}` array literal of microsecond-precision temporal literals, reparsed to
+    # the column's real type by the surrounding `?::<sql_type>[]` cast with no precision
+    # loss. When `include_date` is set (`datetime` columns) the value is normalized to UTC and
+    # suffixed `+00:00` — correct for both `timestamp` (the offset is ignored) and `timestamptz`
+    # (the offset is honored); otherwise (`time` columns) only the wall-clock time of day is
+    # emitted, with no date or zone. Each element is built from a value already cast to a Time
+    # and then `strftime`'d into a fixed numeric format, so the literal can hold only
+    # `[-0-9:. +]` and needs no escaping. `nil` becomes SQL `NULL`.
+    #
+    # @param ar_type [ActiveRecord::Type::Value] the column's cast type, used to coerce each
+    #   value to a Time
+    # @param values [Array] the per-row values for that column
+    # @param include_date [Boolean] true for `datetime` (date + time, normalized to UTC),
+    #   false for `time` (time of day only)
+    # @return [String] a PostgreSQL array literal
+    def format_date_time_array(ar_type, values, include_date:)
+      elements = values.map do |value|
+        time = ar_type.cast(value)
+        next 'NULL' if time.nil?
+
+        time = time.utc if include_date
+        formatted = include_date ? time.strftime('%Y-%m-%d %H:%M:%S.%6N%:z') : time.strftime('%H:%M:%S.%6N')
+        %("#{formatted}")
+      end
+      "{#{elements.join(',')}}"
     end
 
     # The PostgreSQL type of a column, used to build its array cast.

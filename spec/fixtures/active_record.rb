@@ -38,6 +38,7 @@ ActiveRecord::Schema.define do
   create_table :employees do |t|
     t.integer :department_id, null: false
     t.string :name, null: false
+    t.time :shift_start
     t.timestamps null: false
   end
 end
