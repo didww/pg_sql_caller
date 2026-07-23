@@ -342,13 +342,51 @@ PgSqlCaller::BulkUpdate.call(Employee, [
 
 A single column may be passed as a `Symbol` (`returning: :id`). Without `returning` (the default) the call returns the affected-row **count** exactly as before — the behavior is unchanged.
 
+### Updating only rows in an expected state
+
+Pass `condition` — a raw-SQL predicate ANDed onto the key match — to skip rows whose current state isn't what you expect. Typical use: apply the payload only while the row is still in the state you read it in.
+
+```ruby
+# Move to 'processing', but only rows still 'pending' in the database.
+PgSqlCaller::BulkUpdate.call(Order, [
+  { id: 1, status: 'processing' },
+  { id: 2, status: 'processing' }
+], condition: %q{t."status" = 'pending'})
+# => 1   (only one of the two was still pending)
+```
+
+Non-matching rows are simply not updated — with `returning`, they are absent from the result, so the return value tells you exactly which rows the condition let through.
+
+### Overriding how a column is assigned
+
+Pass `set_override` — a hash of column ⇒ raw-SQL expression — to replace the default `col = v.col` assignment. Typical use: leave a column at its stored value unless the row is in the expected state, while still writing the other columns.
+
+```ruby
+PgSqlCaller::BulkUpdate.call(Order, [
+  { id: 1, status: 'delivered', delivered_at: Time.current }
+], set_override: {
+  status: %q{CASE WHEN t."status" = 'pending' THEN v."status" ELSE t."status" END}
+})
+```
+
+A key that isn't in `attrs_list` adds an assignment of its own (there is no `v.col` for it to replace), so a column can be written purely from SQL:
+
+```ruby
+PgSqlCaller::BulkUpdate.call(Employee, attrs_list, set_override: { updated_at: 'NOW()' })
+```
+
+Overridden payload columns keep their position in the `SET` clause; overrides of columns absent from the payload are appended after it.
+
+> ⚠️ **`condition` and `set_override` values are raw SQL, interpolated verbatim** — they are the one part of `BulkUpdate` that is not bound through the sanitizer. Never build them from untrusted input; use `quote_value` for any value you need to embed. Qualify every column reference with `t.` (the target table) or `v.` (the `unnest` source): both aliases expose the same column names, so an unqualified reference is rejected by PostgreSQL as `column reference "..." is ambiguous`.
+
 ### Rules and behavior
 
 - **Every row must include each `unique_by` column**, and all hashes must share the same set of keys.
-- Only the columns you list are written; `unique_by` columns are used for matching, the rest are updated. Columns you omit (e.g. `created_at`) are left untouched.
+- Only the columns you list are written; `unique_by` columns are used for matching, the rest are updated. Columns you omit (e.g. `created_at`) are left untouched — unless a `set_override` names them.
 - Rows that don't match an existing row are simply not updated — this **never inserts**.
 - Returns the number of rows affected (`0` when `attrs_list` is empty — a no-op). With `returning`, it instead returns the updated rows as `Symbol`-keyed hashes (`[]` when `attrs_list` is empty).
-- Raises `ArgumentError` (before touching the database) if a row omits a `unique_by` column, names a column that doesn't exist on the model, or `returning` is empty or names an unknown column.
+- Raises `ArgumentError` (before touching the database) if a row omits a `unique_by` column, names a column that doesn't exist on the model, `returning` is empty or names an unknown column, `condition` is blank, or `set_override` names an unknown or `unique_by` column or carries a blank expression.
+- The statement is available without running it: `PgSqlCaller::BulkUpdate.new(Employee, attrs_list, **options).sql` returns the exact SQL `.call` would execute (its `?` placeholders bound to one typed array per column).
 
 ### Why not `upsert_all` or a loop of `update_all`?
 
@@ -365,7 +403,7 @@ A single column may be passed as a `Symbol` (`returning: :id`). Without `returni
 `PgSqlCaller` is built so that **values are always bound through ActiveRecord's sanitizer and never interpolated into SQL**:
 
 - All `?` placeholders in reading/writing methods are sanitized by `sanitize_sql_array` (quoted and escaped).
-- `BulkUpdate` binds every value as a typed PostgreSQL array; the only identifiers placed into its SQL are restricted to the model's own column names (validated against `column_names`), so the statement is injection-safe by construction — even values like `"'); DROP TABLE employees;--"` are stored verbatim as data.
+- `BulkUpdate` binds every value as a typed PostgreSQL array; the only identifiers placed into its SQL are restricted to the model's own column names (validated against `column_names`), so the statement is injection-safe by construction — even values like `"'); DROP TABLE employees;--"` are stored verbatim as data. Its optional `condition:` and `set_override:` fragments are the exception: they are raw SQL you supply and are interpolated verbatim (see [Bulk updates](#bulk-updates)).
 
 What is **your** responsibility: any SQL fragment, table name, or column name you build into a statement string yourself (rather than passing as a `?` binding) is run as-is. Use `quote_column_name`, `quote_table_name`, and `quote_value` for those, and never interpolate untrusted input directly into the SQL string.
 
