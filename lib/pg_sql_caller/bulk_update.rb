@@ -60,13 +60,13 @@ module PgSqlCaller
     # @param model_class [Class<ActiveRecord::Base>] the model whose table is updated
     # @param attrs_list [Array<Hash>] one hash per row; each MUST include every
     #   `unique_by` column, and all hashes MUST share the same keys
-    # @param unique_by [Symbol, Array<Symbol>] the match column(s) — a single column,
-    #   or all parts of a composite key (default +:id+)
+    # @param unique_by [Symbol, String, Array<Symbol>, Array<String>] the match column(s) —
+    #   a single column, or all parts of a composite key (default +:id+)
     # @param returning [Symbol, Array<Symbol>, nil] column(s) to read back from each
     #   updated row via SQL `RETURNING`; +nil+ (default) keeps the row-count behavior
     # @param condition [String, nil] an extra raw-SQL predicate ANDed onto the match
     #   clause, so only rows also satisfying it are updated; +nil+ (default) adds nothing
-    # @param set_override [Hash{Symbol => String}] raw-SQL expressions replacing the
+    # @param set_override [Hash{Symbol, String => String}] raw-SQL expressions replacing the
     #   default +v.col+ assignment of the named columns (default +{}+)
     # @return [Integer, Array<Hash{Symbol => Object}>] the number of rows affected, or —
     #   when +returning+ is given — the updated rows as type-cast, Symbol-keyed hashes
@@ -86,21 +86,21 @@ module PgSqlCaller
     # @param model_class [Class<ActiveRecord::Base>] the model whose table is updated
     # @param attrs_list [Array<Hash>] one hash per row; each MUST include every
     #   `unique_by` column, and all hashes MUST share the same keys
-    # @param unique_by [Symbol, Array<Symbol>] the match column(s) — a single column,
-    #   or all parts of a composite key (default +:id+)
+    # @param unique_by [Symbol, String, Array<Symbol>, Array<String>] the match column(s) —
+    #   a single column, or all parts of a composite key (default +:id+)
     # @param returning [Symbol, Array<Symbol>, nil] column(s) to read back from each
     #   updated row via SQL `RETURNING`; +nil+ (default) keeps the row-count behavior
     # @param condition [String, nil] an extra raw-SQL predicate ANDed onto the match
     #   clause, so only rows also satisfying it are updated; +nil+ (default) adds nothing
-    # @param set_override [Hash{Symbol => String}] raw-SQL expressions replacing the
+    # @param set_override [Hash{Symbol, String => String}] raw-SQL expressions replacing the
     #   default +v.col+ assignment of the named columns (default +{}+)
     def initialize(model_class, attrs_list, unique_by: :id, returning: nil, condition: nil, set_override: {})
       @model_class = model_class
       @attrs_list = attrs_list
-      @unique_by = Array(unique_by)
+      @unique_by = Array(unique_by).map(&:to_sym)
       @returning = returning.nil? ? nil : Array(returning)
       @condition = condition
-      @set_override = set_override.to_h { |col, expression| [col.to_sym, expression] }
+      @set_override = set_override.to_h.transform_keys(&:to_sym)
     end
 
     # Execute the bulk update as a single `UPDATE ... FROM unnest(...)` statement.
@@ -113,26 +113,42 @@ module PgSqlCaller
     #   +condition+ is blank, or +set_override+ names an unknown or `unique_by` column
     #   or carries a blank expression
     def call
-      validate_returning! unless returning.nil?
-      validate_condition! unless condition.nil?
-      validate_set_override! unless set_override.empty?
+      validate!
       return empty_result if attrs_list.empty?
 
       if returning.nil?
-        sql_caller.execute(sql, *bindings).cmd_tuples
+        sql_caller.execute(build_sql, *bindings).cmd_tuples
       else
-        sql_caller.select_all_serialized(sql, *bindings)
+        sql_caller.select_all_serialized(build_sql, *bindings)
       end
     end
 
     # The full `UPDATE ... FROM unnest(...)` statement, with one `?` placeholder per
     # column for the value arrays, plus a `RETURNING` clause when +returning+ was given.
-    # Public so the generated SQL can be inspected and asserted on directly; +attrs_list+
-    # must not be empty ({#call} short-circuits before it ever builds SQL for that case).
+    # Public so the generated SQL can be inspected and asserted on directly: it runs the
+    # very same validations as {#call}, so an input {#call} would reject never yields a
+    # statement here either. An empty +attrs_list+ has no statement at all ({#call}
+    # short-circuits to {#empty_result} instead of building one), so it raises.
     #
     # @return [String]
-    # @raise [ArgumentError] via {#validate_columns!} when the payload is invalid
+    # @raise [ArgumentError] on any input {#call} rejects (see {#validate!} and
+    #   {#validate_columns!}), or when +attrs_list+ is empty
     def sql
+      validate!
+      raise ArgumentError, 'attrs_list must not be empty to build SQL' if attrs_list.empty?
+
+      build_sql
+    end
+
+    private
+
+    # Assemble the statement itself, with no validation of its own: {#call} and {#sql} each
+    # validate before reaching here, so this is only ever called on inputs already checked
+    # and on a non-empty +attrs_list+.
+    #
+    # @return [String]
+    # @raise [ArgumentError] via {#validate_columns!} on first use of {#columns}
+    def build_sql
       statement = <<~SQL.squish
         UPDATE #{model_class.quoted_table_name} AS t
         SET #{set_clause}
@@ -144,14 +160,26 @@ module PgSqlCaller
       "#{statement} RETURNING #{returning_clause}"
     end
 
-    private
-
     # The value returned for an empty +attrs_list+: a zero row count, or an empty row set
     # when +returning+ was requested — mirroring the shape {#call} returns when it runs.
     #
     # @return [Integer, Array]
     def empty_result
       returning.nil? ? 0 : []
+    end
+
+    # Validate every option that does not depend on the payload — the entry point of both
+    # {#call} and {#sql}, so the two reject exactly the same inputs. {#call} runs it before
+    # its empty-+attrs_list+ short-circuit, so bad options raise even when there is nothing
+    # to update. The payload's own columns are validated separately, by {#validate_columns!}
+    # on first use of {#columns}.
+    #
+    # @return [void]
+    # @raise [ArgumentError] if +returning+, +condition+ or +set_override+ is invalid
+    def validate!
+      validate_returning! unless returning.nil?
+      validate_condition! unless condition.nil?
+      validate_set_override! unless set_override.empty?
     end
 
     # Validate the requested `RETURNING` columns before any SQL runs: at least one column

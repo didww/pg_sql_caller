@@ -386,7 +386,7 @@ Overridden payload columns keep their position in the `SET` clause; overrides of
 - Rows that don't match an existing row are simply not updated — this **never inserts**.
 - Returns the number of rows affected (`0` when `attrs_list` is empty — a no-op). With `returning`, it instead returns the updated rows as `Symbol`-keyed hashes (`[]` when `attrs_list` is empty).
 - Raises `ArgumentError` (before touching the database) if a row omits a `unique_by` column, names a column that doesn't exist on the model, `returning` is empty or names an unknown column, `condition` is blank, or `set_override` names an unknown or `unique_by` column or carries a blank expression.
-- The statement is available without running it: `PgSqlCaller::BulkUpdate.new(Employee, attrs_list, **options).sql` returns the exact SQL `.call` would execute (its `?` placeholders bound to one typed array per column).
+- The statement is available without running it: `PgSqlCaller::BulkUpdate.new(Employee, attrs_list, **options).sql` returns the exact SQL `.call` would execute (its `?` placeholders bound to one typed array per column). It validates exactly what `.call` does, so anything `.call` would reject raises the same `ArgumentError` here instead of yielding an invalid statement — including an empty `attrs_list`, for which `.call` runs no statement at all.
 
 ### Why not `upsert_all` or a loop of `update_all`?
 

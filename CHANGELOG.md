@@ -18,7 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `attrs_list` contributes an assignment of its own, so a column can be written purely from SQL.
   Both fragments are interpolated verbatim and must not be built from untrusted input; column
   references in them must be qualified with `t.` or `v.`.
-- `PgSqlCaller::BulkUpdate#sql` is now public, returning the exact statement `#call` runs.
+- `PgSqlCaller::BulkUpdate#sql` is now public, returning the exact statement `#call` runs. It
+  runs the same validations, so any input `#call` rejects raises the same `ArgumentError` rather
+  than yielding an invalid statement; an empty `attrs_list`, for which `#call` runs no statement
+  at all, raises too.
+- `PgSqlCaller::BulkUpdate` now accepts `unique_by:` as String(s) as well as Symbol(s). They were
+  previously matched against the payload's Symbol keys as-is, so a String silently failed to
+  exclude its column from the `SET` clause and escaped the `set_override` guard against
+  rewriting a match column.
 
 ## [1.1.1] - 2026-06-22
 

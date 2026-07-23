@@ -4,7 +4,8 @@
 # statement it runs, as a separate `it` in that same context — `expect(builder.sql).to eq(...)`.
 # Behavior and the SQL producing it stay side by side, one place per scenario, so no change to
 # the generated statement can slip through unseen and every scenario is covered from both ends.
-# Contexts with an empty or invalid `attrs_list` are the only exemption: no SQL is built there.
+# Contexts where `.call` raises assert the same from the other end: `#sql` validates exactly what
+# `.call` does, so it MUST raise the same error rather than hand back an invalid statement.
 RSpec.describe PgSqlCaller::BulkUpdate do
   subject { described_class.call(Employee, attrs_list, **options) }
 
@@ -202,11 +203,33 @@ RSpec.describe PgSqlCaller::BulkUpdate do
     end
   end
 
+  context 'with a unique_by given as a String' do
+    let(:options) { { unique_by: 'id' } }
+
+    it 'names the same column as the Symbol, so SET still excludes it' do
+      expect(builder.sql).to eq(
+        'UPDATE "employees" AS t SET "name" = v."name", "department_id" = v."department_id" ' \
+        'FROM unnest(?::bigint[], ?::character varying[], ?::integer[]) AS v("id", "name", "department_id") ' \
+        'WHERE t."id" = v."id"'
+      )
+    end
+
+    it 'matches on that column', :aggregate_failures do
+      expect(subject).to eq(2)
+      expect(first.reload.name).to eq('John Updated')
+    end
+  end
+
   context 'when attrs_list is empty' do
     let(:attrs_list) { [] }
 
     it 'is a no-op returning zero' do
       expect { expect(subject).to eq(0) }.not_to(change { first.reload.attributes })
+    end
+
+    # `.call` never builds SQL here, so there is no statement for `#sql` to hand back either.
+    it 'raises ArgumentError from #sql, which has no statement to build' do
+      expect { builder.sql }.to raise_error(ArgumentError, /attrs_list must not be empty/)
     end
   end
 
@@ -215,6 +238,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
 
     it 'raises ArgumentError' do
       expect { subject }.to raise_error(ArgumentError, /include unique_by/)
+    end
+
+    it 'raises the same error from #sql' do
+      expect { builder.sql }.to raise_error(ArgumentError, /include unique_by/)
     end
   end
 
@@ -225,6 +252,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
       expect { subject }.to raise_error(ArgumentError, /unknown.*bogus_column/)
       expect(first.reload.name).to eq('John')
     end
+
+    it 'raises the same error from #sql' do
+      expect { builder.sql }.to raise_error(ArgumentError, /unknown.*bogus_column/)
+    end
   end
 
   context 'when rows carry only the unique_by column' do
@@ -233,6 +264,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
     it 'raises ArgumentError rather than building empty SET SQL', :aggregate_failures do
       expect { subject }.to raise_error(ArgumentError, /no value columns/)
       expect(first.reload.name).to eq('John')
+    end
+
+    it 'raises the same error from #sql' do
+      expect { builder.sql }.to raise_error(ArgumentError, /no value columns/)
     end
   end
 
@@ -247,6 +282,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
     it 'raises ArgumentError before touching the database', :aggregate_failures do
       expect { subject }.to raise_error(ArgumentError, /differ from first row/)
       expect(first.reload.name).to eq('John')
+    end
+
+    it 'raises the same error from #sql' do
+      expect { builder.sql }.to raise_error(ArgumentError, /differ from first row/)
     end
   end
 
@@ -348,6 +387,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
       it 'is a no-op returning an empty array' do
         expect { expect(subject).to eq([]) }.not_to(change { first.reload.attributes })
       end
+
+      it 'raises ArgumentError from #sql, which has no statement to build' do
+        expect { builder.sql }.to raise_error(ArgumentError, /attrs_list must not be empty/)
+      end
     end
 
     context 'when returning names an unknown column' do
@@ -357,6 +400,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
         expect { subject }.to raise_error(ArgumentError, /unknown.*bogus_column/)
         expect(first.reload.name).to eq('John')
       end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /unknown.*bogus_column/)
+      end
     end
 
     context 'when returning is empty' do
@@ -365,6 +412,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
       it 'raises ArgumentError', :aggregate_failures do
         expect { subject }.to raise_error(ArgumentError, /at least one column/)
         expect(first.reload.name).to eq('John')
+      end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /at least one column/)
       end
     end
   end
@@ -462,6 +513,11 @@ RSpec.describe PgSqlCaller::BulkUpdate do
       it 'raises ArgumentError before touching the database', :aggregate_failures do
         expect { subject }.to raise_error(ArgumentError, /condition must not be blank/)
         expect(first.reload.name).to eq('John')
+      end
+
+      # Never hand back `... AND (  )`, which PostgreSQL would reject as a syntax error.
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /condition must not be blank/)
       end
     end
   end
@@ -572,6 +628,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
         expect { subject }.to raise_error(ArgumentError, /unknown.*set_override columns: bogus_column/)
         expect(first.reload.name).to eq('John')
       end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /unknown.*set_override columns: bogus_column/)
+      end
     end
 
     context 'when the override names a unique_by column' do
@@ -581,6 +641,26 @@ RSpec.describe PgSqlCaller::BulkUpdate do
         expect { subject }.to raise_error(ArgumentError, /must not override unique_by/)
         expect(first.reload.name).to eq('John')
       end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /must not override unique_by/)
+      end
+    end
+
+    # `unique_by` is symbolized on the way in, so a String key names the very same column and
+    # must be caught by the same guard — otherwise the override would rewrite the match column.
+    context 'when the override names a unique_by column given as a String' do
+      let(:options) { { unique_by: 'id', set_override: set_override } }
+      let(:set_override) { { id: '1' } }
+
+      it 'raises ArgumentError before touching the database', :aggregate_failures do
+        expect { subject }.to raise_error(ArgumentError, /must not override unique_by/)
+        expect(first.reload.name).to eq('John')
+      end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /must not override unique_by/)
+      end
     end
 
     context 'when an override expression is blank' do
@@ -589,6 +669,10 @@ RSpec.describe PgSqlCaller::BulkUpdate do
       it 'raises ArgumentError before touching the database', :aggregate_failures do
         expect { subject }.to raise_error(ArgumentError, /expressions must not be blank/)
         expect(first.reload.name).to eq('John')
+      end
+
+      it 'raises the same error from #sql' do
+        expect { builder.sql }.to raise_error(ArgumentError, /expressions must not be blank/)
       end
     end
   end
