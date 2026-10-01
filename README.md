@@ -55,12 +55,12 @@ ActiveRecord already exposes low-level connection methods (`select_value`, `sele
 
 | Dependency    | Version            |
 | ------------- | ------------------ |
-| Ruby          | `>= 3.2.0`         |
+| Ruby          | `>= 3.3.0`         |
 | ActiveRecord  | `>= 7.1`           |
 | ActiveSupport | `>= 7.1`           |
 | Database      | PostgreSQL         |
 
-Continuously tested against Rails **7.1, 7.2, 8.0, and 8.1** on Ruby **3.2–3.4**. PostgreSQL is required — the gem uses PostgreSQL-specific features (`pg_total_relation_size`, `unnest`, sequence introspection, the `pg` notice processor).
+Continuously tested against Rails **8.0 and 8.1** on Ruby **3.3, 3.4, and 4.0**. PostgreSQL is required — the gem uses PostgreSQL-specific features (`pg_total_relation_size`, `unnest`, sequence introspection, the `pg` notice processor).
 
 ## Installation
 
@@ -435,7 +435,7 @@ BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile bundle install
 BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile bundle exec rspec
 ```
 
-Available: `rails_7_1`, `rails_7_2`, `rails_8_0`, `rails_8_1`.
+Available: `rails_8_0`, `rails_8_1`.
 
 To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `lib/pg_sql_caller/version.rb`, then run `bundle exec rake release`, which creates a git tag, pushes commits and tags, and pushes the `.gem` to [rubygems.org](https://rubygems.org).
 
