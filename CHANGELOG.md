@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Supported matrix is now Ruby 3.3, 3.4 and 4.0 against Rails 8.0 and 8.1; EOL Ruby 3.2 and
+  Rails 7.1/7.2 are no longer tested and `required_ruby_version` is `>= 3.3.0`. The
+  `activerecord`/`activesupport` floors are unchanged at `>= 7.1`.
+
 ## [1.2.0] - 2026-07-23
 
 ### Added
