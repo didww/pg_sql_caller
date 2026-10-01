@@ -55,7 +55,7 @@ ActiveRecord already exposes low-level connection methods (`select_value`, `sele
 
 | Dependency    | Version            |
 | ------------- | ------------------ |
-| Ruby          | `>= 3.2.0`         |
+| Ruby          | `>= 3.3.0`         |
 | ActiveRecord  | `>= 7.1`           |
 | ActiveSupport | `>= 7.1`           |
 | Database      | PostgreSQL         |

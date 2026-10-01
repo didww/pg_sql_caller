@@ -22,10 +22,10 @@ Gem::Specification.new do |spec|
                        'utilities — plus a fast, injection-safe bulk update that partially updates ' \
                        'many existing rows in a single UPDATE ... FROM unnest(...) statement and ' \
                        'round-trip. The reader API is extensible via define_sql_method, and the gem ' \
-                       'runs on Ruby 3.2+ with Rails 7.1 through 8.1.'
+                       'runs on Ruby 3.3+ with Rails 7.1 through 8.1.'
   spec.homepage      = 'https://github.com/didww/pg_sql_caller'
   spec.license       = 'MIT'
-  spec.required_ruby_version = Gem::Requirement.new('>= 3.2.0')
+  spec.required_ruby_version = Gem::Requirement.new('>= 3.3.0')
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = spec.homepage
